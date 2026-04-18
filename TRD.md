@@ -189,7 +189,6 @@ T5: Both requests confirmed with HCM
 │                                                            │
 │  - Real-time API: GET/POST /balance/:emp/:loc            │
 │  - Batch API: POST /batch/balances                        │
-│  - Webhooks: POST /webhooks/hcm/* (optional)              │
 │                                                            │
 └────────────────────────────────────────────────────────────┘
 ```
@@ -324,7 +323,7 @@ STEP 4: RECONCILIATION (Batch Sync)
 **SyncLog**
 ```
 - id (UUID)
-- type (enum: REAL_TIME_CHECK, REAL_TIME_DEDUCT, BATCH_SYNC, WEBHOOK)
+- type (enum: REAL_TIME_CHECK, REAL_TIME_DEDUCT, BATCH_SYNC)
 - status (enum: SUCCESS, CONFLICT, ERROR, RETRY)
 - employee_id (UUID, FK, nullable)
 - location_id (UUID, FK, nullable)
@@ -566,7 +565,7 @@ Response 400:
 POST /api/batch/balances
 
 {
-  "since": "2026-04-17T10:00:00Z" (optional)
+  "since": "2026-04-17T10:00:00Z"
 }
 
 Response 200:
@@ -672,18 +671,6 @@ After 60s: Try one request (HALF_OPEN state)
 **Pros**: Comprehensive reconciliation, handles all balances
 **Cons**: Delayed (hourly), batch processing overhead
 
-#### Webhook Integration (Optional)
-**Trigger**: HCM sends webhook on balance change
-
-**Endpoints**:
-```
-POST /webhooks/hcm/balance-updated
-POST /webhooks/hcm/employee-updated
-```
-
-**Pros**: Real-time updates, no polling needed
-**Cons**: Requires HCM support, webhook reliability
-
 ---
 
 ## 3. Alternative Approaches Considered
@@ -783,26 +770,7 @@ POST /webhooks/hcm/employee-updated
 
 **Decision**: **REJECTED** - Real-time checks necessary for user experience.
 
----
-
-### Alternative 6: Push-Only Sync (Webhooks Only)
-
-**Approach**: Only update balance via HCM webhooks, no polling.
-
-**Pros**:
-- Real-time updates
-- No polling overhead
-- Lower latency
-
-**Cons**:
-- Requires HCM webhook support
-- Webhook reliability issues
-- No fallback if webhooks fail
-- Requires webhook infrastructure
-
-**Decision**: **OPTIONAL** - Can be added later as enhancement. Not required for MVP.
-
----
+----
 
 ### Alternative 7: Caching Strategy - TTL vs Event-Based
 
@@ -1168,20 +1136,7 @@ src/
 
 ---
 
-## 7. Future Enhancements
-
-1. **Webhook Support**: Accept HCM webhooks for real-time balance updates
-2. **GraphQL API**: Add GraphQL endpoint alongside REST
-3. **Multi-Instance Deployment**: Add Redis for distributed caching
-4. **Advanced Reporting**: Balance trends, approval analytics
-5. **Leave Type Support**: Different leave types (vacation, sick, personal)
-6. **Policy Engine**: Complex approval workflows, policy enforcement
-7. **Mobile App**: Native mobile app for employees
-8. **Integration with Calendar**: Sync with employee calendars
-
----
-
-## 8. Risks & Mitigation
+## 7. Risks & Mitigation
 
 | Risk | Impact | Probability | Mitigation |
 |------|--------|-------------|-----------|
