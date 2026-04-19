@@ -20,6 +20,9 @@ export class ManagerController {
     try {
       return await this.timeOffRequestService.getPendingRequests(user.id);
     } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
       throw new HttpException(
         error instanceof Error ? error.message : 'Failed to get pending requests',
         HttpStatus.INTERNAL_SERVER_ERROR,
@@ -38,9 +41,12 @@ export class ManagerController {
     try {
       return await this.timeOffRequestService.approveRequest(requestId, user.id, dto);
     } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
       throw new HttpException(
         error instanceof Error ? error.message : 'Failed to approve request',
-        HttpStatus.BAD_REQUEST,
+        HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
   }
@@ -56,9 +62,12 @@ export class ManagerController {
     try {
       return await this.timeOffRequestService.rejectRequest(requestId, user.id, dto);
     } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
       throw new HttpException(
         error instanceof Error ? error.message : 'Failed to reject request',
-        HttpStatus.BAD_REQUEST,
+        HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
   }

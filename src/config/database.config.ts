@@ -15,5 +15,10 @@ export const DatabaseConfig: TypeOrmModuleOptions = {
   // SQLite specific options for better concurrency handling
   extra: {
     busyTimeout: 5000,
+    // WAL mode allows concurrent reads during writes, improving throughput
+    // and reducing SQLITE_BUSY errors under concurrent load
+    pragmas: {
+      journal_mode: 'WAL',
+    },
   },
 };

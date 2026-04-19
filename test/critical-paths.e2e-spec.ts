@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { INestApplication } from '@nestjs/common';
+import { INestApplication, ValidationPipe } from '@nestjs/common';
 import * as request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { DataSource } from 'typeorm';
@@ -23,6 +23,7 @@ describe('Critical Paths - Complete Request Lifecycle (e2e)', () => {
     }).compile();
 
     app = moduleFixture.createNestApplication();
+    app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }));
     await app.init();
 
     dataSource = app.get(DataSource);
@@ -288,7 +289,7 @@ describe('Critical Paths - Complete Request Lifecycle (e2e)', () => {
           comment: 'Approved',
         });
 
-      expect(res.status).toBe(400);
+      expect(res.status).toBe(404);
     });
   });
 

@@ -57,6 +57,21 @@ describe('ManagerController', () => {
 
       expect(result).toEqual([]);
     });
+
+    it('should pass through HttpException', async () => {
+      const user: AuthenticatedUser = { id: 'mgr-1', type: 'manager', token: 'mgr-1' };
+      const { NotFoundException } = require('@nestjs/common');
+      jest.spyOn(timeOffRequestService, 'getPendingRequests')
+        .mockRejectedValue(new NotFoundException('Not found'));
+      await expect(controller.getPendingRequests(user)).rejects.toThrow(NotFoundException);
+    });
+
+    it('should wrap non-Error thrown values as 500', async () => {
+      const user: AuthenticatedUser = { id: 'mgr-1', type: 'manager', token: 'mgr-1' };
+      jest.spyOn(timeOffRequestService, 'getPendingRequests')
+        .mockRejectedValue('string error');
+      await expect(controller.getPendingRequests(user)).rejects.toThrow('Failed to get pending requests');
+    });
   });
 
   describe('approveRequest', () => {
@@ -94,6 +109,21 @@ describe('ManagerController', () => {
 
       await expect(controller.approveRequest(user, requestId, dto)).rejects.toThrow();
     });
+
+    it('should pass through HttpException from service', async () => {
+      const user: AuthenticatedUser = { id: 'mgr-1', type: 'manager', token: 'mgr-1' };
+      const { ConflictException } = require('@nestjs/common');
+      jest.spyOn(timeOffRequestService, 'approveRequest')
+        .mockRejectedValue(new ConflictException('Already approved'));
+      await expect(controller.approveRequest(user, 'req-1', { comment: 'ok' })).rejects.toThrow(ConflictException);
+    });
+
+    it('should wrap non-Error thrown values as 500', async () => {
+      const user: AuthenticatedUser = { id: 'mgr-1', type: 'manager', token: 'mgr-1' };
+      jest.spyOn(timeOffRequestService, 'approveRequest')
+        .mockRejectedValue(42);
+      await expect(controller.approveRequest(user, 'req-1', { comment: 'ok' })).rejects.toThrow('Failed to approve request');
+    });
   });
 
   describe('rejectRequest', () => {
@@ -130,6 +160,21 @@ describe('ManagerController', () => {
         .mockRejectedValue(new Error('Request not found'));
 
       await expect(controller.rejectRequest(user, requestId, dto)).rejects.toThrow();
+    });
+
+    it('should pass through HttpException from service', async () => {
+      const user: AuthenticatedUser = { id: 'mgr-1', type: 'manager', token: 'mgr-1' };
+      const { ConflictException } = require('@nestjs/common');
+      jest.spyOn(timeOffRequestService, 'rejectRequest')
+        .mockRejectedValue(new ConflictException('Already rejected'));
+      await expect(controller.rejectRequest(user, 'req-1', { comment: 'no' })).rejects.toThrow(ConflictException);
+    });
+
+    it('should wrap non-Error thrown values as 500', async () => {
+      const user: AuthenticatedUser = { id: 'mgr-1', type: 'manager', token: 'mgr-1' };
+      jest.spyOn(timeOffRequestService, 'rejectRequest')
+        .mockRejectedValue(null);
+      await expect(controller.rejectRequest(user, 'req-1', { comment: 'no' })).rejects.toThrow('Failed to reject request');
     });
   });
 });

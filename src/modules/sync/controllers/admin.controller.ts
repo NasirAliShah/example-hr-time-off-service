@@ -17,6 +17,9 @@ export class AdminController {
     try {
       return await this.syncService.batchSync();
     } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
       throw new HttpException(
         error instanceof Error ? error.message : 'Failed to trigger batch sync',
         HttpStatus.INTERNAL_SERVER_ERROR,
@@ -31,6 +34,9 @@ export class AdminController {
     try {
       return await this.syncService.getSyncLog(syncId);
     } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
       throw new HttpException(
         error instanceof Error ? error.message : 'Failed to get sync status',
         HttpStatus.INTERNAL_SERVER_ERROR,
@@ -45,6 +51,9 @@ export class AdminController {
     try {
       return await this.syncService.getRecentSyncLogs(100);
     } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
       throw new HttpException(
         error instanceof Error ? error.message : 'Failed to get sync logs',
         HttpStatus.INTERNAL_SERVER_ERROR,

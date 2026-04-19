@@ -24,9 +24,12 @@ export class TimeOffController {
     try {
       return await this.timeOffRequestService.submitRequest(user.id, dto);
     } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
       throw new HttpException(
         error instanceof Error ? error.message : 'Failed to submit request',
-        HttpStatus.BAD_REQUEST,
+        HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
   }
@@ -40,6 +43,9 @@ export class TimeOffController {
     try {
       return await this.timeOffRequestService.getRequestHistory(user.id);
     } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
       throw new HttpException(
         error instanceof Error ? error.message : 'Failed to get request history',
         HttpStatus.INTERNAL_SERVER_ERROR,
@@ -61,6 +67,9 @@ export class TimeOffController {
     try {
       return await this.balanceService.getBalance(user.id, locationId);
     } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
       throw new HttpException(
         error instanceof Error ? error.message : 'Failed to get balance',
         HttpStatus.INTERNAL_SERVER_ERROR,

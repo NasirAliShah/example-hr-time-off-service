@@ -31,6 +31,7 @@ export class TimeOffRequestService {
   ): Promise<RequestResponseDto> {
     this.logger.info('Submitting time-off request', { employeeId, dto });
 
+    // Validate inputs before starting transaction
     const startDate = new Date(dto.startDate);
     const endDate = new Date(dto.endDate);
 
@@ -42,20 +43,43 @@ export class TimeOffRequestService {
       throw new BadRequestException('Days must be greater than 0');
     }
 
-    const balance = await this.balanceService.getBalance(employeeId, dto.locationId);
-    
-    if (balance.available < dto.days) {
-      throw new BadRequestException(
-        `Insufficient balance. Available: ${balance.available} days, Requested: ${dto.days} days`,
-      );
+    // Idempotency key enforcement: if provided, check for existing request
+    if (dto.idempotencyKey) {
+      try {
+        const existingRequest = await this.requestRepository.findOne({
+          where: { idempotencyKey: dto.idempotencyKey },
+        });
+
+        if (existingRequest) {
+          this.logger.info('Duplicate request detected via idempotency key', {
+            idempotencyKey: dto.idempotencyKey,
+            existingRequestId: existingRequest.id,
+          });
+          return this.mapToDto(existingRequest);
+        }
+      } catch (error) {
+        this.logger.error('Failed to check idempotency key', {
+          idempotencyKey: dto.idempotencyKey,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        throw error;
+      }
     }
 
+    // Perform balance check + reserve + request creation atomically
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
     await queryRunner.startTransaction();
 
     try {
-      await this.balanceService.reserveBalance(employeeId, dto.locationId, dto.days);
+      // Reserve balance inside the transaction with pessimistic lock.
+      // This prevents concurrent requests from reading stale reserved values.
+      await this.balanceService.reserveBalance(
+        employeeId,
+        dto.locationId,
+        dto.days,
+        queryRunner.manager,
+      );
 
       const request = this.requestRepository.create({
         id: this.generateId(),
@@ -66,6 +90,7 @@ export class TimeOffRequestService {
         endDate,
         status: RequestStatus.PENDING_APPROVAL,
         submittedAt: new Date(),
+        idempotencyKey: dto.idempotencyKey || undefined,
       });
 
       const savedRequest = await queryRunner.manager.save(request);
@@ -85,6 +110,14 @@ export class TimeOffRequestService {
         employeeId,
         error: error instanceof Error ? error.message : String(error),
       });
+
+      // Re-throw as BadRequestException for balance errors so controller returns 400
+      if (error instanceof Error && (
+        error.message.includes('Insufficient available balance') ||
+        error.message.includes('Balance not found')
+      )) {
+        throw new BadRequestException(error.message);
+      }
       throw error;
     } finally {
       await queryRunner.release();
@@ -115,6 +148,28 @@ export class TimeOffRequestService {
     await queryRunner.startTransaction();
 
     try {
+      // Re-validate balance availability before HCM deduction.
+      // Balance may have changed between submission and approval (batch sync, other approvals).
+      const currentBalance = await this.balanceService.getBalanceForUpdate(
+        request.employeeId,
+        request.locationId,
+        queryRunner.manager,
+      );
+
+      if (!currentBalance) {
+        throw new BadRequestException('Balance record not found for this employee-location');
+      }
+
+      const available = currentBalance.balance - currentBalance.reserved;
+      if (available < 0) {
+        this.logger.warn('Balance integrity issue detected at approval time', {
+          requestId,
+          balance: currentBalance.balance,
+          reserved: currentBalance.reserved,
+          available,
+        });
+      }
+
       request.status = RequestStatus.APPROVED;
       request.managerId = managerId;
       request.managerComment = dto.comment || '';
@@ -136,10 +191,12 @@ export class TimeOffRequestService {
 
         await queryRunner.manager.save(request);
 
+        // Deduct local balance inside the same transaction
         await this.balanceService.deductBalance(
           request.employeeId,
           request.locationId,
           request.days,
+          queryRunner.manager,
         );
 
         await queryRunner.commitTransaction();
@@ -149,8 +206,24 @@ export class TimeOffRequestService {
           confirmationId: deductResult.confirmationId,
         });
       } catch (hcmError) {
+        // HCM deduction failed — mark request as FAILED and release the reservation
         request.status = RequestStatus.FAILED;
         await queryRunner.manager.save(request);
+
+        try {
+          await this.balanceService.releaseBalance(
+            request.employeeId,
+            request.locationId,
+            request.days,
+            queryRunner.manager,
+          );
+        } catch (releaseError) {
+          this.logger.error('Failed to release balance after HCM failure', {
+            requestId,
+            error: releaseError instanceof Error ? releaseError.message : String(releaseError),
+          });
+        }
+
         await queryRunner.commitTransaction();
 
         this.logger.error('Failed to confirm time-off request with HCM', {
@@ -163,7 +236,9 @@ export class TimeOffRequestService {
         );
       }
     } catch (error) {
-      await queryRunner.rollbackTransaction();
+      if (queryRunner.isTransactionActive) {
+        await queryRunner.rollbackTransaction();
+      }
       throw error;
     } finally {
       await queryRunner.release();
@@ -202,10 +277,12 @@ export class TimeOffRequestService {
 
       await queryRunner.manager.save(request);
 
+      // Release balance inside the same transaction for consistency
       await this.balanceService.releaseBalance(
         request.employeeId,
         request.locationId,
         request.days,
+        queryRunner.manager,
       );
 
       await queryRunner.commitTransaction();
@@ -214,7 +291,9 @@ export class TimeOffRequestService {
 
       return this.mapToDto(request);
     } catch (error) {
-      await queryRunner.rollbackTransaction();
+      if (queryRunner.isTransactionActive) {
+        await queryRunner.rollbackTransaction();
+      }
       this.logger.error('Failed to reject request', {
         requestId,
         error: error instanceof Error ? error.message : String(error),
@@ -274,8 +353,12 @@ export class TimeOffRequestService {
       locationId: request.locationId,
       managerId: request.managerId || null,
       days: request.days,
-      startDate: request.startDate.toISOString().split('T')[0],
-      endDate: request.endDate.toISOString().split('T')[0],
+      startDate: request.startDate instanceof Date
+        ? request.startDate.toISOString().split('T')[0]
+        : String(request.startDate).split('T')[0],
+      endDate: request.endDate instanceof Date
+        ? request.endDate.toISOString().split('T')[0]
+        : String(request.endDate).split('T')[0],
       status: request.status,
       managerComment: request.managerComment || null,
       hcmConfirmationId: request.hcmConfirmationId || null,

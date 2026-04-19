@@ -112,16 +112,17 @@ export class HcmIntegrationService {
     }
 
     try {
-      const response = await this.retryWithBackoff(async () => {
-        return await this.axiosInstance.post<DeductResponse>(
-          `/api/balance/${employeeId}/${locationId}`,
-          {
-            deduct: days,
-            reason: 'TIME_OFF_REQUEST',
-            requestId,
-          },
-        );
-      });
+      // No retry for deductions — they are non-idempotent.
+      // If the request succeeds at HCM but the response times out,
+      // a retry would cause a double-deduction.
+      const response = await this.axiosInstance.post<DeductResponse>(
+        `/api/balance/${employeeId}/${locationId}`,
+        {
+          deduct: days,
+          reason: 'TIME_OFF_REQUEST',
+          requestId,
+        },
+      );
 
       this.onSuccess();
       this.logger.info('Balance deduction successful', {

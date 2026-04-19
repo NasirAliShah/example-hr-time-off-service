@@ -200,6 +200,7 @@ export class SyncService {
     if (localBalance.balance !== hcmBalance) {
       const delta = hcmBalance - localBalance.balance;
       const oldBalance = localBalance.balance;
+      const oldReserved = localBalance.reserved;
 
       this.logger.warn('Balance conflict detected', {
         employeeId,
@@ -220,6 +221,20 @@ export class SyncService {
 
       localBalance.balance = hcmBalance;
       localBalance.lastSyncedAt = new Date();
+
+      // Validate reserved against new balance to prevent negative available.
+      // If reserved > new balance, cap reserved at new balance.
+      if (localBalance.reserved > hcmBalance) {
+        this.logger.warn('Reserved balance exceeds new HCM balance, capping reserved', {
+          employeeId,
+          locationId,
+          oldReserved: localBalance.reserved,
+          newBalance: hcmBalance,
+          cappedReserved: hcmBalance,
+        });
+        localBalance.reserved = Math.max(0, hcmBalance);
+      }
+
       await this.balanceRepository.save(localBalance);
 
       await this.logSync({
@@ -231,7 +246,9 @@ export class SyncService {
         oldBalance,
         newBalance: hcmBalance,
         delta,
-        errorMessage: undefined,
+        errorMessage: oldReserved > hcmBalance
+          ? `Reserved (${oldReserved}) exceeded new balance (${hcmBalance}), reserved capped`
+          : undefined,
         details: { syncId, action: 'updated', reason: 'conflict_resolved' },
       });
 
@@ -240,6 +257,7 @@ export class SyncService {
         locationId,
         oldBalance,
         newBalance: hcmBalance,
+        reserved: localBalance.reserved,
       });
     } else {
       result.successCount++;

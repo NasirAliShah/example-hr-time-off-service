@@ -54,6 +54,18 @@ describe('AdminController', () => {
 
       await expect(controller.triggerBatchSync()).rejects.toThrow();
     });
+
+    it('should pass through HttpException', async () => {
+      const { ServiceUnavailableException } = require('@nestjs/common');
+      jest.spyOn(syncService, 'batchSync')
+        .mockRejectedValue(new ServiceUnavailableException('HCM down'));
+      await expect(controller.triggerBatchSync()).rejects.toThrow(ServiceUnavailableException);
+    });
+
+    it('should wrap non-Error thrown values as 500', async () => {
+      jest.spyOn(syncService, 'batchSync').mockRejectedValue('string error');
+      await expect(controller.triggerBatchSync()).rejects.toThrow('Failed to trigger batch sync');
+    });
   });
 
   describe('getSyncStatus', () => {
@@ -89,6 +101,18 @@ describe('AdminController', () => {
         .mockRejectedValue(new Error('Sync log not found'));
 
       await expect(controller.getSyncStatus('sync-123')).rejects.toThrow();
+    });
+
+    it('should pass through HttpException', async () => {
+      const { NotFoundException } = require('@nestjs/common');
+      jest.spyOn(syncService, 'getSyncLog')
+        .mockRejectedValue(new NotFoundException('Not found'));
+      await expect(controller.getSyncStatus('sync-123')).rejects.toThrow(NotFoundException);
+    });
+
+    it('should wrap non-Error thrown values as 500', async () => {
+      jest.spyOn(syncService, 'getSyncLog').mockRejectedValue(undefined);
+      await expect(controller.getSyncStatus('sync-123')).rejects.toThrow('Failed to get sync status');
     });
   });
 
@@ -145,6 +169,18 @@ describe('AdminController', () => {
         .mockRejectedValue(new Error('Failed to retrieve logs'));
 
       await expect(controller.getRecentSyncLogs()).rejects.toThrow();
+    });
+
+    it('should pass through HttpException', async () => {
+      const { BadRequestException } = require('@nestjs/common');
+      jest.spyOn(syncService, 'getRecentSyncLogs')
+        .mockRejectedValue(new BadRequestException('Bad'));
+      await expect(controller.getRecentSyncLogs()).rejects.toThrow(BadRequestException);
+    });
+
+    it('should wrap non-Error thrown values as 500', async () => {
+      jest.spyOn(syncService, 'getRecentSyncLogs').mockRejectedValue(null);
+      await expect(controller.getRecentSyncLogs()).rejects.toThrow('Failed to get sync logs');
     });
   });
 });

@@ -212,6 +212,83 @@ describe('SyncService', () => {
       expect(result.errors).toHaveLength(1);
     });
 
+    it('should cap reserved when HCM balance drops below reserved amount', async () => {
+      const mockHcmResponse = {
+        balances: [
+          { employeeId: 'emp-1', locationId: 'loc-1', balance: 5, lastUpdated: '2026-04-18' },
+        ],
+        timestamp: '2026-04-18T00:00:00Z',
+        count: 1,
+      };
+
+      const mockLocalBalance = {
+        id: 'bal-1',
+        employeeId: 'emp-1',
+        locationId: 'loc-1',
+        balance: 20,
+        reserved: 8,
+        lastSyncedAt: new Date(),
+      };
+
+      const mockEmployee = { id: 'emp-1', hcmEmployeeId: 'hcm-emp-1', name: 'John Doe', email: 'john@example.com' };
+      const mockLocation = { id: 'loc-1', hcmLocationId: 'hcm-loc-1', name: 'New York', timezone: 'America/New_York' };
+
+      mockHcmIntegrationService.batchSync.mockResolvedValue(mockHcmResponse);
+      mockEmployeeRepository.findOne.mockResolvedValue(mockEmployee);
+      mockLocationRepository.findOne.mockResolvedValue(mockLocation);
+      mockBalanceRepository.findOne.mockResolvedValue(mockLocalBalance);
+      mockBalanceRepository.save.mockResolvedValue(mockLocalBalance);
+      mockSyncLogRepository.create.mockImplementation((data) => data);
+      mockSyncLogRepository.save.mockResolvedValue({});
+
+      const result = await service.batchSync();
+
+      // reserved (8) > new HCM balance (5), so reserved should be capped at 5
+      expect(mockLocalBalance.balance).toBe(5);
+      expect(mockLocalBalance.reserved).toBe(5);
+      expect(result.conflictCount).toBe(1);
+      expect(balanceRepository.save).toHaveBeenCalledWith(
+        expect.objectContaining({ balance: 5, reserved: 5 }),
+      );
+    });
+
+    it('should not cap reserved when HCM balance is higher than reserved', async () => {
+      const mockHcmResponse = {
+        balances: [
+          { employeeId: 'emp-1', locationId: 'loc-1', balance: 25, lastUpdated: '2026-04-18' },
+        ],
+        timestamp: '2026-04-18T00:00:00Z',
+        count: 1,
+      };
+
+      const mockLocalBalance = {
+        id: 'bal-1',
+        employeeId: 'emp-1',
+        locationId: 'loc-1',
+        balance: 20,
+        reserved: 5,
+        lastSyncedAt: new Date(),
+      };
+
+      const mockEmployee = { id: 'emp-1', hcmEmployeeId: 'hcm-emp-1', name: 'John Doe', email: 'john@example.com' };
+      const mockLocation = { id: 'loc-1', hcmLocationId: 'hcm-loc-1', name: 'New York', timezone: 'America/New_York' };
+
+      mockHcmIntegrationService.batchSync.mockResolvedValue(mockHcmResponse);
+      mockEmployeeRepository.findOne.mockResolvedValue(mockEmployee);
+      mockLocationRepository.findOne.mockResolvedValue(mockLocation);
+      mockBalanceRepository.findOne.mockResolvedValue(mockLocalBalance);
+      mockBalanceRepository.save.mockResolvedValue(mockLocalBalance);
+      mockSyncLogRepository.create.mockImplementation((data) => data);
+      mockSyncLogRepository.save.mockResolvedValue({});
+
+      const result = await service.batchSync();
+
+      // reserved (5) < new HCM balance (25), so reserved stays at 5
+      expect(mockLocalBalance.balance).toBe(25);
+      expect(mockLocalBalance.reserved).toBe(5);
+      expect(result.conflictCount).toBe(1);
+    });
+
     it('should throw error if HCM batch sync fails', async () => {
       mockHcmIntegrationService.batchSync.mockRejectedValue(new Error('HCM unavailable'));
       mockSyncLogRepository.create.mockImplementation((data) => data);

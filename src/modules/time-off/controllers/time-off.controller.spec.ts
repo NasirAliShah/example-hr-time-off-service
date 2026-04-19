@@ -74,6 +74,27 @@ describe('TimeOffController', () => {
 
       await expect(controller.submitRequest(user, dto)).rejects.toThrow();
     });
+
+    it('should pass through HttpException from service', async () => {
+      const user: AuthenticatedUser = { id: 'emp-1', type: 'employee', token: 'emp-1' };
+      const dto = { days: 2, startDate: '2026-06-01', endDate: '2026-06-02', locationId: 'loc-1' };
+      const { BadRequestException } = require('@nestjs/common');
+
+      jest.spyOn(timeOffRequestService, 'submitRequest')
+        .mockRejectedValue(new BadRequestException('Bad input'));
+
+      await expect(controller.submitRequest(user, dto)).rejects.toThrow(BadRequestException);
+    });
+
+    it('should wrap non-Error thrown values as 500', async () => {
+      const user: AuthenticatedUser = { id: 'emp-1', type: 'employee', token: 'emp-1' };
+      const dto = { days: 2, startDate: '2026-06-01', endDate: '2026-06-02', locationId: 'loc-1' };
+
+      jest.spyOn(timeOffRequestService, 'submitRequest')
+        .mockRejectedValue('string error');
+
+      await expect(controller.submitRequest(user, dto)).rejects.toThrow('Failed to submit request');
+    });
   });
 
   describe('getRequestHistory', () => {
@@ -105,6 +126,21 @@ describe('TimeOffController', () => {
       const result = await controller.getRequestHistory(user);
 
       expect(result).toEqual([]);
+    });
+
+    it('should pass through HttpException', async () => {
+      const user: AuthenticatedUser = { id: 'emp-1', type: 'employee', token: 'emp-1' };
+      const { NotFoundException } = require('@nestjs/common');
+      jest.spyOn(timeOffRequestService, 'getRequestHistory')
+        .mockRejectedValue(new NotFoundException('Not found'));
+      await expect(controller.getRequestHistory(user)).rejects.toThrow(NotFoundException);
+    });
+
+    it('should wrap non-Error thrown values as 500', async () => {
+      const user: AuthenticatedUser = { id: 'emp-1', type: 'employee', token: 'emp-1' };
+      jest.spyOn(timeOffRequestService, 'getRequestHistory')
+        .mockRejectedValue(undefined);
+      await expect(controller.getRequestHistory(user)).rejects.toThrow('Failed to get request history');
     });
   });
 
@@ -141,6 +177,21 @@ describe('TimeOffController', () => {
         .mockRejectedValue(new Error('Balance not found'));
 
       await expect(controller.getBalance(user, 'loc-1')).rejects.toThrow();
+    });
+
+    it('should pass through HttpException from balance service', async () => {
+      const user: AuthenticatedUser = { id: 'emp-1', type: 'employee', token: 'emp-1' };
+      const { NotFoundException } = require('@nestjs/common');
+      jest.spyOn(balanceService, 'getBalance')
+        .mockRejectedValue(new NotFoundException('Not found'));
+      await expect(controller.getBalance(user, 'loc-1')).rejects.toThrow(NotFoundException);
+    });
+
+    it('should wrap non-Error thrown values as 500', async () => {
+      const user: AuthenticatedUser = { id: 'emp-1', type: 'employee', token: 'emp-1' };
+      jest.spyOn(balanceService, 'getBalance')
+        .mockRejectedValue(null);
+      await expect(controller.getBalance(user, 'loc-1')).rejects.toThrow('Failed to get balance');
     });
   });
 });

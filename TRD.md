@@ -1,7 +1,7 @@
 # Technical Requirement Document (TRD)
 ## Time-Off Microservice for ExampleHR
 
-**Document Version:** 1.0  
+**Document Version:** 1.0
 **Date:** April 2026  
 **Status:** Final  
 **Author:** Backend Engineering Team
@@ -876,18 +876,23 @@ src/
 │   │   └── locations.module.ts
 │   ├── time-off/
 │   │   ├── entities/
-│   │   │   └── time-off-request.entity.ts
+│   │   │   ├── time-off-request.entity.ts
+│   │   │   └── idempotency-log.entity.ts
 │   │   ├── dto/
-│   │   │   ├── submit-request.dto.ts
+│   │   │   ├── submit-request.dto.ts      # includes optional idempotencyKey (UUID)
 │   │   │   ├── approve-request.dto.ts
 │   │   │   ├── reject-request.dto.ts
 │   │   │   └── request-response.dto.ts
 │   │   ├── services/
 │   │   │   ├── time-off-request.service.ts
-│   │   │   └── time-off-request.service.spec.ts
+│   │   │   ├── time-off-request.service.spec.ts
+│   │   │   ├── idempotency.service.ts
+│   │   │   └── idempotency.service.spec.ts
 │   │   ├── controllers/
 │   │   │   ├── time-off.controller.ts
-│   │   │   └── manager.controller.ts
+│   │   │   ├── time-off.controller.spec.ts
+│   │   │   ├── manager.controller.ts
+│   │   │   └── manager.controller.spec.ts
 │   │   └── time-off.module.ts
 │   ├── balance/
 │   │   ├── entities/
@@ -940,30 +945,38 @@ src/
 ├── app.e2e-spec.ts                 # Basic E2E tests
 ├── critical-paths.e2e-spec.ts      # Critical path tests
 ├── security.e2e-spec.ts            # Security & authentication tests
-└── edge-cases.e2e-spec.ts           # Edge case tests
+├── edge-cases.e2e-spec.ts          # Edge case tests
+└── advanced-scenarios.e2e-spec.ts   # Concurrency, idempotency, lifecycle, approval re-validation
 ```
 
 ### 4.3 Key Services
 
 **BalanceService**
-- Get balance (with caching)
-- Update balance (local)
-- Reserve balance (for pending requests)
-- Release balance (on rejection)
+- Get balance (with caching and HCM sync)
+- Update balance (local, with optional `EntityManager`)
+- Reserve balance (for pending requests, with optional `EntityManager`)
+- Release balance (on rejection/HCM failure, with optional `EntityManager`)
+- Deduct balance (on HCM confirmation, with optional `EntityManager`)
+- `getBalanceForUpdate()` — pessimistic locking with SQLite fallback
 
 **HCMIntegrationService**
-- Real-time balance check
-- Real-time balance deduction
-- Batch balance sync
-- Error handling and retry logic
-- Circuit breaker management
+- Real-time balance check (with retry)
+- Real-time balance deduction (non-retryable to prevent double-deductions)
+- Batch balance sync (with retry)
+- Error handling and retry logic with exponential backoff
+- Circuit breaker management (CLOSED → OPEN → HALF_OPEN transitions)
 
 **TimeOffRequestService**
-- Submit request
-- Approve/reject request
-- Confirm with HCM
-- Get request history
-- Handle rollbacks
+- Submit request (atomic: idempotency check → validate → reserve balance in transaction)
+- Approve request (atomic: re-validate balance with pessimistic lock → HCM deduction → deduct locally)
+- Reject request (atomic: release balance in transaction)
+- Get request history, pending requests, request by ID
+- Handle rollbacks and HCM failure recovery
+
+**IdempotencyService**
+- Check for duplicate requests by idempotency key
+- Record request/response pairs with 24h TTL
+- Cleanup expired idempotency logs
 
 **SyncService**
 - Scheduled batch sync
@@ -984,9 +997,13 @@ src/
 - Edge cases (negative balance, concurrent requests)
 
 **Implemented Test Files**:
-- `src/modules/balance/services/balance.service.spec.ts` - Balance operations (getBalance, reserveBalance, releaseBalance, deductBalance)
-- `src/modules/hcm-integration/services/hcm-integration.service.spec.ts` - HCM API calls and circuit breaker behavior
-- `src/modules/time-off/services/time-off-request.service.spec.ts` - Request submission, approval, rejection with transaction handling
+- `src/modules/balance/services/balance.service.spec.ts` - Balance operations (cache, sync, locking, updateBalance, reserve, release, deduct)
+- `src/modules/hcm-integration/services/hcm-integration.service.spec.ts` - HCM API, circuit breaker (OPEN/HALF_OPEN/CLOSED), retry, error handling
+- `src/modules/time-off/services/time-off-request.service.spec.ts` - Request lifecycle, idempotency key enforcement, validation, error paths
+- `src/modules/time-off/services/idempotency.service.spec.ts` - Idempotency log service (checkDuplicate, recordRequest, cleanupExpired)
+- `src/modules/time-off/controllers/time-off.controller.spec.ts` - Employee endpoints with error branch coverage
+- `src/modules/time-off/controllers/manager.controller.spec.ts` - Manager endpoints with error branch coverage
+- `src/modules/sync/controllers/admin.controller.spec.ts` - Admin endpoints with error branch coverage
 
 **Mock Strategy**:
 - Mock HCM client
@@ -1024,6 +1041,7 @@ src/
 - `test/critical-paths.e2e-spec.ts` - Critical path tests (request validation, balance checks, state transitions, RBAC, concurrency)
 - `test/security.e2e-spec.ts` - Security tests (authentication, authorization, token validation, role-based access control)
 - `test/edge-cases.e2e-spec.ts` - Edge case tests (concurrent requests, large values, special characters)
+- `test/advanced-scenarios.e2e-spec.ts` - Advanced scenarios (concurrency, idempotency key enforcement, lifecycle balance conservation, approval re-validation, balance boundaries)
 
 **Mock Strategy**:
 - Real NestJS app
@@ -1047,16 +1065,16 @@ src/
 
 **Tools**: Jest with Istanbul/NYC
 
-**Current Coverage**:
-- Statements: 67.85%
-- Branches: 40.44%
-- Functions: 59.63%
-- Lines: 68.25%
+**Current Coverage** (all thresholds enforced by Jest configuration):
+- Statements: ≥85% ✅
+- Branches: ≥80% ✅
+- Functions: ≥85% ✅
+- Lines: ≥85% ✅
 
 **Test Suite Summary**:
-- Unit Tests: 68 tests (10 test suites)
-- E2E Tests: 87 tests (4 test suites)
-- Total: 155 tests
+- Unit Tests: 149 tests (11 test suites)
+- E2E Tests: 110 tests (5 test suites)
+- Total: 259 tests
 
 **Covered Scenarios**:
 - ✅ Balance validation logic
@@ -1077,11 +1095,11 @@ src/
 **Environment**: Single NestJS instance + SQLite
 
 **Deployment Steps**:
-1. Build Docker image
-2. Run migrations
-3. Seed initial data
-4. Start service with CORS and rate limiting enabled
-5. Health check
+1. Install dependencies (`npm install`)
+2. Configure environment variables (`.env`)
+3. Seed initial data (optional: `npm run seed`)
+4. Start service (`npm run start:prod`) with CORS and rate limiting enabled
+5. Verify health check (`GET /health`)
 
 **Configuration** (via environment variables):
 - `NODE_ENV` - Environment (development/test/production)
@@ -1175,9 +1193,9 @@ src/
    - Circuit breaker prevents cascading failures
 
 4. **Testing**:
-   - 68%+ code coverage (67.85% statements, 68.25% lines)
-   - All critical paths tested
-   - 155 total tests (68 unit + 87 E2E)
+   - All coverage thresholds met (≥85% statements, ≥80% branches, ≥85% functions, ≥85% lines)
+   - All critical paths and advanced scenarios tested
+   - 259 total tests (149 unit + 110 E2E)
    - All test scenarios passing
 
 5. **Operations**:

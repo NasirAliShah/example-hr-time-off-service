@@ -20,6 +20,7 @@ export enum RequestStatus {
 @Index('idx_request_dates', ['startDate', 'endDate'])
 @Index('idx_request_submitted', ['submittedAt'])
 @Index('idx_request_hcm_id', ['hcmConfirmationId'])
+@Index('idx_request_idempotency', ['idempotencyKey'], { unique: true, where: 'idempotencyKey IS NOT NULL' })
 export class TimeOffRequest {
   @PrimaryColumn('varchar', { length: 36 })
   id: string;
@@ -50,6 +51,9 @@ export class TimeOffRequest {
 
   @Column('varchar', { length: 255, nullable: true })
   hcmConfirmationId: string;
+
+  @Column('varchar', { length: 255, nullable: true })
+  idempotencyKey: string;
 
   @CreateDateColumn()
   createdAt: Date;
