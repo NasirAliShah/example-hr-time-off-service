@@ -3,6 +3,12 @@
 /node_modules
 /build
 /tmp
+/data
+/mock-hcm-server/node_modules
+/mock-hcm-server/package-lock.json
+/mock-hcm-server/yarn.lock
+package-lock.json
+yarn.lock
 
 # Logs
 logs
@@ -22,3 +28,7 @@ lerna-debug.log*
 # temp directory
 .temp
 .tmp
+
+# test coverage
+coverage
+
