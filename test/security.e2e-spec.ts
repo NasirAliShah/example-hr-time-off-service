@@ -4,6 +4,7 @@ import * as request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { DataSource } from 'typeorm';
 import * as path from 'path';
+import { resetMockHcmServer } from './mock-hcm-helper';
 
 process.env.DATABASE_PATH = path.resolve(__dirname, '../data/timeoff-security-e2e.db');
 process.env.NODE_ENV = 'test';
@@ -31,6 +32,8 @@ describe('Security & Authentication (e2e)', () => {
     // Drop all tables and recreate them to ensure clean state
     await dataSource.dropDatabase();
     await dataSource.synchronize();
+
+    await resetMockHcmServer();
   });
 
   afterAll(async () => {
@@ -119,7 +122,7 @@ describe('Security & Authentication (e2e)', () => {
       it('should accept valid employee token (emp-X)', () => {
         return request(app.getHttpServer())
           .get('/api/v1/balance?locationId=loc-1')
-          .set('Authorization', 'Bearer emp-1')
+          .set('Authorization', 'Bearer emp-emp-1')
           .expect((res) => {
             // Will fail with 404 or 500 due to missing data, but auth should pass
             expect(res.status).not.toBe(401);
@@ -160,7 +163,7 @@ describe('Security & Authentication (e2e)', () => {
       it('should allow employee to access /api/v1/requests', () => {
         return request(app.getHttpServer())
           .get('/api/v1/requests')
-          .set('Authorization', 'Bearer emp-1')
+          .set('Authorization', 'Bearer emp-emp-1')
           .expect((res) => {
             expect(res.status).not.toBe(403);
           });
@@ -169,7 +172,7 @@ describe('Security & Authentication (e2e)', () => {
       it('should allow employee to access /api/v1/balance', () => {
         return request(app.getHttpServer())
           .get('/api/v1/balance?locationId=loc-1')
-          .set('Authorization', 'Bearer emp-1')
+          .set('Authorization', 'Bearer emp-emp-1')
           .expect((res) => {
             expect(res.status).not.toBe(403);
           });
@@ -178,7 +181,7 @@ describe('Security & Authentication (e2e)', () => {
       it('should deny employee access to /api/v1/manager/requests', () => {
         return request(app.getHttpServer())
           .get('/api/v1/manager/requests')
-          .set('Authorization', 'Bearer emp-1')
+          .set('Authorization', 'Bearer emp-emp-1')
           .expect(403)
           .expect((res) => {
             expect(res.body.message).toContain('does not have access');
@@ -188,7 +191,7 @@ describe('Security & Authentication (e2e)', () => {
       it('should deny employee access to /api/v1/admin/sync/batch', () => {
         return request(app.getHttpServer())
           .post('/api/v1/admin/sync/batch')
-          .set('Authorization', 'Bearer emp-1')
+          .set('Authorization', 'Bearer emp-emp-1')
           .expect(403);
       });
     });

@@ -9,6 +9,8 @@ module.exports = {
   moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/src/$1',
   },
+  globalSetup: '<rootDir>/test/global-e2e-setup.ts',
+  globalTeardown: '<rootDir>/test/global-e2e-teardown.ts',
   maxWorkers: 1,
   forceExit: true,
   detectOpenHandles: true,

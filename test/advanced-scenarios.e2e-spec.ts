@@ -9,6 +9,7 @@ import { TimeOffBalance } from '../src/modules/balance/entities/time-off-balance
 import { TimeOffRequest } from '../src/modules/time-off/entities/time-off-request.entity';
 import * as path from 'path';
 import { v4 as uuidv4 } from 'uuid';
+import { resetMockHcmServer, setMockHcmBalance } from './mock-hcm-helper';
 
 process.env.DATABASE_PATH = path.resolve(__dirname, '../data/timeoff-advanced-e2e.db');
 process.env.NODE_ENV = 'test';
@@ -107,6 +108,11 @@ describe('Advanced Scenarios (e2e)', () => {
       reserved: 0,
       lastSyncedAt: new Date(),
     });
+
+    // Sync mock HCM server balances with local DB seed data
+    await resetMockHcmServer();
+    await setMockHcmBalance('emp-1', 'loc-1', balance);
+    await setMockHcmBalance('emp-2', 'loc-1', 15);
   }
 
   // =========================================================================

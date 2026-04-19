@@ -4,6 +4,10 @@ import * as request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { DataSource } from 'typeorm';
 import * as path from 'path';
+import { Employee } from '../src/modules/employees/entities/employee.entity';
+import { Location } from '../src/modules/locations/entities/location.entity';
+import { TimeOffBalance } from '../src/modules/balance/entities/time-off-balance.entity';
+import { resetMockHcmServer } from './mock-hcm-helper';
 
 process.env.DATABASE_PATH = path.resolve(__dirname, '../data/timeoff-edge-cases-e2e.db');
 process.env.NODE_ENV = 'test';
@@ -31,6 +35,64 @@ describe('Edge Cases & Advanced Scenarios (e2e)', () => {
     // Drop all tables and recreate them to ensure clean state
     await dataSource.dropDatabase();
     await dataSource.synchronize();
+
+    // Reset mock HCM server to initial state
+    await resetMockHcmServer();
+
+    const employeeRepo = dataSource.getRepository(Employee);
+    const locationRepo = dataSource.getRepository(Location);
+    const balanceRepo = dataSource.getRepository(TimeOffBalance);
+
+    await locationRepo.save({
+      id: 'loc-1',
+      hcmLocationId: 'hcm-loc-1',
+      name: 'New York',
+      timezone: 'America/New_York',
+    });
+
+    await locationRepo.save({
+      id: 'invalid-loc',
+      hcmLocationId: 'invalid-loc',
+      name: 'Invalid Location',
+      timezone: 'UTC',
+    });
+
+    await employeeRepo.save({
+      id: 'emp-1',
+      hcmEmployeeId: 'hcm-emp-1',
+      name: 'John Doe',
+      email: 'john@example.com',
+    });
+
+    await employeeRepo.save({
+      id: 'emp-2',
+      hcmEmployeeId: 'hcm-emp-2',
+      name: 'Jane Smith',
+      email: 'jane@example.com',
+    });
+
+    await employeeRepo.save({
+      id: '1',
+      hcmEmployeeId: 'hcm-mgr-1',
+      name: 'Manager',
+      email: 'manager@example.com',
+    });
+
+    await balanceRepo.save({
+      id: 'bal-1',
+      employeeId: 'emp-1',
+      locationId: 'loc-1',
+      balance: 20,
+      reserved: 0,
+    });
+
+    await balanceRepo.save({
+      id: 'bal-2',
+      employeeId: 'emp-2',
+      locationId: 'loc-1',
+      balance: 15,
+      reserved: 0,
+    });
   });
 
   afterAll(async () => {
@@ -44,18 +106,16 @@ describe('Edge Cases & Advanced Scenarios (e2e)', () => {
     it('should retrieve balance successfully', async () => {
       const res = await request(app.getHttpServer())
         .get('/api/v1/balance?locationId=loc-1')
-        .set('Authorization', 'Bearer emp-1');
+        .set('Authorization', 'Bearer emp-emp-1');
 
-      expect([200, 400, 500]).toContain(res.status);
-      if (res.status === 200) {
-        expect(res.body).toHaveProperty('balance');
-      }
+      expect(res.status).toBe(200);
+      expect(res.body).toHaveProperty('balance');
     });
 
     it('should handle missing locationId in balance request', async () => {
       const res = await request(app.getHttpServer())
         .get('/api/v1/balance')
-        .set('Authorization', 'Bearer emp-1');
+        .set('Authorization', 'Bearer emp-emp-1');
 
       expect(res.status).toBe(400);
     });
@@ -63,9 +123,11 @@ describe('Edge Cases & Advanced Scenarios (e2e)', () => {
     it('should handle invalid locationId gracefully', async () => {
       const res = await request(app.getHttpServer())
         .get('/api/v1/balance?locationId=invalid-loc')
-        .set('Authorization', 'Bearer emp-1');
+        .set('Authorization', 'Bearer emp-emp-1');
 
-      expect([200, 400, 500]).toContain(res.status);
+      // Mock HCM returns 400 INVALID_DIMENSION for unknown combos,
+      // but the service creates a local balance with 0 and returns 200
+      expect(res.status).toBe(200);
     });
   });
 
@@ -75,12 +137,10 @@ describe('Edge Cases & Advanced Scenarios (e2e)', () => {
         .post('/api/v1/admin/sync/batch')
         .set('Authorization', 'Bearer admin-1');
 
-      expect([201, 500]).toContain(syncRes.status);
-
-      if (syncRes.status === 201) {
-        expect(syncRes.body).toHaveProperty('syncId');
-        expect(syncRes.body).toHaveProperty('totalRecords');
-      }
+      // With mock HCM server running, batch sync should succeed
+      expect(syncRes.status).toBe(201);
+      expect(syncRes.body).toHaveProperty('syncId');
+      expect(syncRes.body).toHaveProperty('totalRecords');
     });
 
     it('should retrieve sync logs for audit trail', async () => {
@@ -113,7 +173,7 @@ describe('Edge Cases & Advanced Scenarios (e2e)', () => {
     it('should handle sequential requests successfully', async () => {
       const res1 = await request(app.getHttpServer())
         .post('/api/v1/requests')
-        .set('Authorization', 'Bearer emp-1')
+        .set('Authorization', 'Bearer emp-emp-1')
         .send({
           days: 1,
           startDate: '2026-07-01',
@@ -121,11 +181,12 @@ describe('Edge Cases & Advanced Scenarios (e2e)', () => {
           locationId: 'loc-1',
         });
 
-      expect([201, 400, 500]).toContain(res1.status);
+      // With HCM running and balance available, submission should succeed
+      expect([200, 201]).toContain(res1.status);
 
       const res2 = await request(app.getHttpServer())
         .post('/api/v1/requests')
-        .set('Authorization', 'Bearer emp-1')
+        .set('Authorization', 'Bearer emp-emp-1')
         .send({
           days: 1,
           startDate: '2026-07-03',
@@ -133,13 +194,13 @@ describe('Edge Cases & Advanced Scenarios (e2e)', () => {
           locationId: 'loc-1',
         });
 
-      expect([201, 400, 500]).toContain(res2.status);
+      expect([200, 201]).toContain(res2.status);
     });
 
     it('should handle request approval workflow', async () => {
       const submitRes = await request(app.getHttpServer())
         .post('/api/v1/requests')
-        .set('Authorization', 'Bearer emp-1')
+        .set('Authorization', 'Bearer emp-emp-1')
         .send({
           days: 1,
           startDate: '2026-08-01',
@@ -155,7 +216,7 @@ describe('Edge Cases & Advanced Scenarios (e2e)', () => {
           .set('Authorization', 'Bearer mgr-1')
           .send({ comment: 'Approved' });
 
-        expect([200, 400, 409, 503]).toContain(approveRes.status);
+        expect([200, 201, 400, 409, 503]).toContain(approveRes.status);
       }
     });
   });
@@ -164,12 +225,10 @@ describe('Edge Cases & Advanced Scenarios (e2e)', () => {
     it('should retrieve request history for employee', async () => {
       const historyRes = await request(app.getHttpServer())
         .get('/api/v1/requests')
-        .set('Authorization', 'Bearer emp-1');
+        .set('Authorization', 'Bearer emp-emp-1');
 
-      expect([200, 500]).toContain(historyRes.status);
-      if (historyRes.status === 200) {
-        expect(Array.isArray(historyRes.body)).toBe(true);
-      }
+      expect(historyRes.status).toBe(200);
+      expect(Array.isArray(historyRes.body)).toBe(true);
     });
 
     it('should retrieve pending requests for manager', async () => {
@@ -184,14 +243,14 @@ describe('Edge Cases & Advanced Scenarios (e2e)', () => {
     it('should handle request retrieval by ID', async () => {
       const historyRes = await request(app.getHttpServer())
         .get('/api/v1/requests')
-        .set('Authorization', 'Bearer emp-1');
+        .set('Authorization', 'Bearer emp-emp-1');
 
       if (historyRes.status === 200 && historyRes.body.length > 0) {
         const requestId = historyRes.body[0].id;
 
         const detailRes = await request(app.getHttpServer())
           .get(`/api/v1/requests/${requestId}`)
-          .set('Authorization', 'Bearer emp-1');
+          .set('Authorization', 'Bearer emp-emp-1');
 
         expect([200, 404, 500]).toContain(detailRes.status);
       }
@@ -202,7 +261,7 @@ describe('Edge Cases & Advanced Scenarios (e2e)', () => {
     it('should reject request with zero days', async () => {
       const res = await request(app.getHttpServer())
         .post('/api/v1/requests')
-        .set('Authorization', 'Bearer emp-1')
+        .set('Authorization', 'Bearer emp-emp-1')
         .send({
           days: 0,
           startDate: '2026-09-01',
@@ -216,7 +275,7 @@ describe('Edge Cases & Advanced Scenarios (e2e)', () => {
     it('should reject request with negative days', async () => {
       const res = await request(app.getHttpServer())
         .post('/api/v1/requests')
-        .set('Authorization', 'Bearer emp-1')
+        .set('Authorization', 'Bearer emp-emp-1')
         .send({
           days: -5,
           startDate: '2026-09-01',
@@ -230,7 +289,7 @@ describe('Edge Cases & Advanced Scenarios (e2e)', () => {
     it('should reject request with end date before start date', async () => {
       const res = await request(app.getHttpServer())
         .post('/api/v1/requests')
-        .set('Authorization', 'Bearer emp-1')
+        .set('Authorization', 'Bearer emp-emp-1')
         .send({
           days: 2,
           startDate: '2026-09-05',
@@ -244,7 +303,7 @@ describe('Edge Cases & Advanced Scenarios (e2e)', () => {
     it('should handle very large day values gracefully', async () => {
       const res = await request(app.getHttpServer())
         .post('/api/v1/requests')
-        .set('Authorization', 'Bearer emp-1')
+        .set('Authorization', 'Bearer emp-emp-1')
         .send({
           days: 999999,
           startDate: '2026-10-01',
@@ -258,7 +317,7 @@ describe('Edge Cases & Advanced Scenarios (e2e)', () => {
     it('should handle special characters in comments', async () => {
       const submitRes = await request(app.getHttpServer())
         .post('/api/v1/requests')
-        .set('Authorization', 'Bearer emp-1')
+        .set('Authorization', 'Bearer emp-emp-1')
         .send({
           days: 1,
           startDate: '2026-11-01',
@@ -277,14 +336,14 @@ describe('Edge Cases & Advanced Scenarios (e2e)', () => {
             comment: 'Approved with special chars: <script>alert("xss")</script>',
           });
 
-        expect([200, 400, 409, 503]).toContain(approveRes.status);
+        expect([200, 201, 400, 409, 503]).toContain(approveRes.status);
       }
     });
 
     it('should handle missing required fields', async () => {
       const res = await request(app.getHttpServer())
         .post('/api/v1/requests')
-        .set('Authorization', 'Bearer emp-1')
+        .set('Authorization', 'Bearer emp-emp-1')
         .send({
           days: 2,
           startDate: '2026-12-01',
@@ -296,7 +355,7 @@ describe('Edge Cases & Advanced Scenarios (e2e)', () => {
     it('should handle invalid date formats', async () => {
       const res = await request(app.getHttpServer())
         .post('/api/v1/requests')
-        .set('Authorization', 'Bearer emp-1')
+        .set('Authorization', 'Bearer emp-emp-1')
         .send({
           days: 2,
           startDate: 'invalid-date',
@@ -312,7 +371,7 @@ describe('Edge Cases & Advanced Scenarios (e2e)', () => {
     it('should prevent approval of already-approved request', async () => {
       const submitRes = await request(app.getHttpServer())
         .post('/api/v1/requests')
-        .set('Authorization', 'Bearer emp-1')
+        .set('Authorization', 'Bearer emp-emp-1')
         .send({
           days: 1,
           startDate: '2027-01-01',
@@ -328,9 +387,9 @@ describe('Edge Cases & Advanced Scenarios (e2e)', () => {
           .set('Authorization', 'Bearer mgr-1')
           .send({ comment: 'First approval' });
 
-        expect([200, 503]).toContain(approveRes1.status);
-
-        if (approveRes1.status === 200) {
+        expect([200, 201, 503]).toContain(approveRes1.status);
+        
+        if (approveRes1.status === 200 || approveRes1.status === 201) {
           const approveRes2 = await request(app.getHttpServer())
             .post(`/api/v1/manager/requests/${requestId}/approve`)
             .set('Authorization', 'Bearer mgr-1')
@@ -344,7 +403,7 @@ describe('Edge Cases & Advanced Scenarios (e2e)', () => {
     it('should prevent rejection of already-rejected request', async () => {
       const submitRes = await request(app.getHttpServer())
         .post('/api/v1/requests')
-        .set('Authorization', 'Bearer emp-1')
+        .set('Authorization', 'Bearer emp-emp-1')
         .send({
           days: 1,
           startDate: '2027-02-01',
@@ -360,9 +419,9 @@ describe('Edge Cases & Advanced Scenarios (e2e)', () => {
           .set('Authorization', 'Bearer mgr-1')
           .send({ comment: 'First rejection' });
 
-        expect([200, 503]).toContain(rejectRes1.status);
+        expect([200, 201, 503]).toContain(rejectRes1.status);
 
-        if (rejectRes1.status === 200) {
+        if (rejectRes1.status === 200 || rejectRes1.status === 201) {
           const rejectRes2 = await request(app.getHttpServer())
             .post(`/api/v1/manager/requests/${requestId}/reject`)
             .set('Authorization', 'Bearer mgr-1')
@@ -405,7 +464,7 @@ describe('Edge Cases & Advanced Scenarios (e2e)', () => {
     it('should prevent employee from accessing manager endpoints', async () => {
       const res = await request(app.getHttpServer())
         .get('/api/v1/manager/requests')
-        .set('Authorization', 'Bearer emp-1');
+        .set('Authorization', 'Bearer emp-emp-1');
 
       expect(res.status).toBe(403);
     });
@@ -413,7 +472,7 @@ describe('Edge Cases & Advanced Scenarios (e2e)', () => {
     it('should prevent non-admin from accessing admin endpoints', async () => {
       const res = await request(app.getHttpServer())
         .post('/api/v1/admin/sync/batch')
-        .set('Authorization', 'Bearer emp-1');
+        .set('Authorization', 'Bearer emp-emp-1');
 
       expect(res.status).toBe(403);
     });

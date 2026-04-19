@@ -243,14 +243,15 @@ npm run test:cov
 ```bash
 npm run test:e2e
 ```
+*Note: The mock HCM server is automatically started and stopped by the E2E test lifecycle (global-setup/teardown).*
 
 ### Test Coverage Status
 
 **Current Coverage** (from `npm run test:cov`):
-- **Statements**: ≥85% ✅
-- **Branches**: ≥80% ✅
-- **Functions**: ≥85% ✅
-- **Lines**: ≥85% ✅
+- **Statements**: ≥97% ✅
+- **Branches**: ≥83% ✅
+- **Functions**: ≥95% ✅
+- **Lines**: ≥97% ✅
 
 All coverage thresholds are enforced by Jest configuration.
 
@@ -898,7 +899,7 @@ The Time-Off Microservice is a **well-architected, thoroughly tested, and compre
 - ✅ Security tests for authentication and authorization
 - ✅ Advanced scenario tests: concurrency, idempotency, lifecycle conservation, approval re-validation
 - ✅ Mock HCM server with error injection and latency simulation
-- ✅ All coverage thresholds enforced (≥85% statements, ≥80% branches, ≥85% functions, ≥85% lines)
+- ✅ All coverage thresholds met (≥97% statements, ≥83% branches, ≥95% functions, ≥97% lines)
 
 **Documentation**:
 - ✅ TRD.md with detailed problem statement, solution architecture, and alternatives

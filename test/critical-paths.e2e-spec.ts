@@ -8,6 +8,7 @@ import { Location } from '../src/modules/locations/entities/location.entity';
 import { TimeOffBalance } from '../src/modules/balance/entities/time-off-balance.entity';
 import { TimeOffRequest } from '../src/modules/time-off/entities/time-off-request.entity';
 import * as path from 'path';
+import { resetMockHcmServer, setMockHcmBalance } from './mock-hcm-helper';
 
 process.env.DATABASE_PATH = path.resolve(__dirname, '../data/timeoff-critical-e2e.db');
 process.env.NODE_ENV = 'test';
@@ -62,6 +63,13 @@ describe('Critical Paths - Complete Request Lifecycle (e2e)', () => {
       email: 'jane@example.com',
     });
 
+    await employeeRepo.save({
+      id: '1',
+      hcmEmployeeId: 'hcm-mgr-1',
+      name: 'Manager',
+      email: 'manager@example.com',
+    });
+
     await balanceRepo.save({
       id: 'bal-1',
       employeeId: 'emp-1',
@@ -77,6 +85,11 @@ describe('Critical Paths - Complete Request Lifecycle (e2e)', () => {
       balance: 15,
       reserved: 0,
     });
+
+    // Sync mock HCM server balances with local DB seed data
+    await resetMockHcmServer();
+    await setMockHcmBalance('emp-1', 'loc-1', 20);
+    await setMockHcmBalance('emp-2', 'loc-1', 15);
   });
 
   afterAll(async () => {
@@ -90,7 +103,7 @@ describe('Critical Paths - Complete Request Lifecycle (e2e)', () => {
     it('should submit a valid time-off request', async () => {
       const res = await request(app.getHttpServer())
         .post('/api/v1/requests')
-        .set('Authorization', 'Bearer emp-1')
+        .set('Authorization', 'Bearer emp-emp-1')
         .send({
           days: 2,
           startDate: '2026-06-01',
@@ -98,17 +111,15 @@ describe('Critical Paths - Complete Request Lifecycle (e2e)', () => {
           locationId: 'loc-1',
         });
 
-      expect([201, 400, 500]).toContain(res.status);
-      if (res.status === 201) {
-        expect(res.body).toHaveProperty('id');
-        requestId = res.body.id;
-      }
+      expect(res.status).toBe(201);
+      expect(res.body).toHaveProperty('id');
+      requestId = res.body.id;
     });
 
     it('should reject request with insufficient balance', async () => {
       const res = await request(app.getHttpServer())
         .post('/api/v1/requests')
-        .set('Authorization', 'Bearer emp-1')
+        .set('Authorization', 'Bearer emp-emp-1')
         .send({
           days: 1000,
           startDate: '2026-07-01',
@@ -116,13 +127,13 @@ describe('Critical Paths - Complete Request Lifecycle (e2e)', () => {
           locationId: 'loc-1',
         });
 
-      expect([400, 500]).toContain(res.status);
+      expect(res.status).toBe(400);
     });
 
     it('should reject request with invalid date range', async () => {
       const res = await request(app.getHttpServer())
         .post('/api/v1/requests')
-        .set('Authorization', 'Bearer emp-1')
+        .set('Authorization', 'Bearer emp-emp-1')
         .send({
           days: 2,
           startDate: '2026-05-02',
@@ -137,7 +148,7 @@ describe('Critical Paths - Complete Request Lifecycle (e2e)', () => {
     it('should reject request with missing locationId', async () => {
       const res = await request(app.getHttpServer())
         .post('/api/v1/requests')
-        .set('Authorization', 'Bearer emp-1')
+        .set('Authorization', 'Bearer emp-emp-1')
         .send({
           days: 2,
           startDate: '2026-06-01',
@@ -150,7 +161,7 @@ describe('Critical Paths - Complete Request Lifecycle (e2e)', () => {
     it('should reject request with zero days', async () => {
       const res = await request(app.getHttpServer())
         .post('/api/v1/requests')
-        .set('Authorization', 'Bearer emp-1')
+        .set('Authorization', 'Bearer emp-emp-1')
         .send({
           days: 0,
           startDate: '2026-06-01',
@@ -164,7 +175,7 @@ describe('Critical Paths - Complete Request Lifecycle (e2e)', () => {
     it('should reject request with negative days', async () => {
       const res = await request(app.getHttpServer())
         .post('/api/v1/requests')
-        .set('Authorization', 'Bearer emp-1')
+        .set('Authorization', 'Bearer emp-emp-1')
         .send({
           days: -5,
           startDate: '2026-06-01',
@@ -180,18 +191,16 @@ describe('Critical Paths - Complete Request Lifecycle (e2e)', () => {
     it('should get employee balance', async () => {
       const res = await request(app.getHttpServer())
         .get('/api/v1/balance?locationId=loc-1')
-        .set('Authorization', 'Bearer emp-1');
+        .set('Authorization', 'Bearer emp-emp-1');
 
-      expect([200, 400, 500]).toContain(res.status);
-      if (res.status === 200) {
-        expect(res.body).toHaveProperty('balance');
-      }
+      expect(res.status).toBe(200);
+      expect(res.body).toHaveProperty('balance');
     });
 
     it('should reject balance check without locationId', async () => {
       const res = await request(app.getHttpServer())
         .get('/api/v1/balance')
-        .set('Authorization', 'Bearer emp-1');
+        .set('Authorization', 'Bearer emp-emp-1');
 
       expect(res.status).toBe(400);
       expect(res.body.message).toContain('locationId');
@@ -200,9 +209,9 @@ describe('Critical Paths - Complete Request Lifecycle (e2e)', () => {
     it('should return cached balance indicator', async () => {
       const res = await request(app.getHttpServer())
         .get('/api/v1/balance?locationId=loc-1')
-        .set('Authorization', 'Bearer emp-1');
+        .set('Authorization', 'Bearer emp-emp-1');
 
-      expect([200, 400, 500]).toContain(res.status);
+      expect(res.status).toBe(200);
     });
   });
 
@@ -210,7 +219,7 @@ describe('Critical Paths - Complete Request Lifecycle (e2e)', () => {
     it('should get employee request history', async () => {
       const res = await request(app.getHttpServer())
         .get('/api/v1/requests')
-        .set('Authorization', 'Bearer emp-1');
+        .set('Authorization', 'Bearer emp-emp-1');
 
       expect(res.status).toBe(200);
       expect(Array.isArray(res.body)).toBe(true);
@@ -219,7 +228,7 @@ describe('Critical Paths - Complete Request Lifecycle (e2e)', () => {
     it('should return empty array for employee with no requests', async () => {
       const res = await request(app.getHttpServer())
         .get('/api/v1/requests')
-        .set('Authorization', 'Bearer emp-99');
+        .set('Authorization', 'Bearer emp-emp-99');
 
       expect(res.status).toBe(200);
       expect(Array.isArray(res.body)).toBe(true);
@@ -249,15 +258,16 @@ describe('Critical Paths - Complete Request Lifecycle (e2e)', () => {
           comment: 'Approved for testing',
         });
 
-      expect([200, 202]).toContain(res.status);
+      // With mock HCM server running, approval triggers HCM deduction and confirms
+      expect([200, 201]).toContain(res.status);
       expect(res.body).toHaveProperty('id');
-      expect(['APPROVED', 'CONFIRMED']).toContain(res.body.status);
+      expect(res.body.status).toBe('CONFIRMED');
     });
 
     it('should reject a pending request', async () => {
       const submitRes = await request(app.getHttpServer())
         .post('/api/v1/requests')
-        .set('Authorization', 'Bearer emp-2')
+        .set('Authorization', 'Bearer emp-emp-2')
         .send({
           days: 1,
           startDate: '2026-08-01',
@@ -277,7 +287,7 @@ describe('Critical Paths - Complete Request Lifecycle (e2e)', () => {
           comment: 'Cannot approve at this time',
         });
 
-      expect(rejectRes.status).toBe(200);
+      expect([200, 201]).toContain(rejectRes.status);
       expect(rejectRes.body.status).toBe('REJECTED');
     });
 
@@ -299,7 +309,8 @@ describe('Critical Paths - Complete Request Lifecycle (e2e)', () => {
         .post('/api/v1/admin/sync/batch')
         .set('Authorization', 'Bearer admin-1');
 
-      expect([200, 201, 202, 500]).toContain(res.status);
+      // With mock HCM server running, batch sync should succeed
+      expect([200, 201, 202]).toContain(res.status);
     });
 
     it('should get sync logs', async () => {
@@ -327,7 +338,7 @@ describe('Critical Paths - Complete Request Lifecycle (e2e)', () => {
     it('should handle missing required fields in request submission', async () => {
       const res = await request(app.getHttpServer())
         .post('/api/v1/requests')
-        .set('Authorization', 'Bearer emp-1')
+        .set('Authorization', 'Bearer emp-emp-1')
         .send({
           days: 2,
         });
@@ -338,7 +349,7 @@ describe('Critical Paths - Complete Request Lifecycle (e2e)', () => {
     it('should handle invalid JSON in request body', async () => {
       const res = await request(app.getHttpServer())
         .post('/api/v1/requests')
-        .set('Authorization', 'Bearer emp-1')
+        .set('Authorization', 'Bearer emp-emp-1')
         .set('Content-Type', 'application/json')
         .send('invalid json');
 
@@ -349,7 +360,7 @@ describe('Critical Paths - Complete Request Lifecycle (e2e)', () => {
       const promises = [
         request(app.getHttpServer())
           .post('/api/v1/requests')
-          .set('Authorization', 'Bearer emp-1')
+          .set('Authorization', 'Bearer emp-emp-1')
           .send({
             days: 1,
             startDate: '2026-09-01',
@@ -358,7 +369,7 @@ describe('Critical Paths - Complete Request Lifecycle (e2e)', () => {
           }),
         request(app.getHttpServer())
           .post('/api/v1/requests')
-          .set('Authorization', 'Bearer emp-1')
+          .set('Authorization', 'Bearer emp-emp-1')
           .send({
             days: 1,
             startDate: '2026-09-03',
@@ -377,7 +388,7 @@ describe('Critical Paths - Complete Request Lifecycle (e2e)', () => {
     it('should handle very large day values', async () => {
       const res = await request(app.getHttpServer())
         .post('/api/v1/requests')
-        .set('Authorization', 'Bearer emp-1')
+        .set('Authorization', 'Bearer emp-emp-1')
         .send({
           days: 999999,
           startDate: '2026-06-01',
@@ -391,7 +402,7 @@ describe('Critical Paths - Complete Request Lifecycle (e2e)', () => {
     it('should handle special characters in comments', async () => {
       const submitRes = await request(app.getHttpServer())
         .post('/api/v1/requests')
-        .set('Authorization', 'Bearer emp-2')
+        .set('Authorization', 'Bearer emp-emp-2')
         .send({
           days: 1,
           startDate: '2026-10-01',
@@ -408,7 +419,7 @@ describe('Critical Paths - Complete Request Lifecycle (e2e)', () => {
           comment: 'Approved! <script>alert("xss")</script> & special chars: @#$%',
         });
 
-      expect([200, 202]).toContain(approveRes.status);
+      expect([200, 201, 202]).toContain(approveRes.status);
     });
   });
 
@@ -416,7 +427,7 @@ describe('Critical Paths - Complete Request Lifecycle (e2e)', () => {
     it('employee cannot approve requests', async () => {
       const res = await request(app.getHttpServer())
         .post('/api/v1/manager/requests/any-id/approve')
-        .set('Authorization', 'Bearer emp-1')
+        .set('Authorization', 'Bearer emp-emp-1')
         .send({
           comment: 'Trying to approve',
         });

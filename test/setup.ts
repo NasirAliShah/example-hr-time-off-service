@@ -43,6 +43,13 @@ export async function setupDatabase() {
     email: 'jane@example.com',
   });
 
+  await employeeRepo.save({
+    id: '1',
+    hcmEmployeeId: 'hcm-mgr-1',
+    name: 'Manager',
+    email: 'manager@example.com',
+  });
+
   await balanceRepo.save({
     id: 'bal-1',
     employeeId: 'emp-1',

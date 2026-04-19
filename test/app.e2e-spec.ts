@@ -7,6 +7,7 @@ import { Employee } from '../src/modules/employees/entities/employee.entity';
 import { Location } from '../src/modules/locations/entities/location.entity';
 import { TimeOffBalance } from '../src/modules/balance/entities/time-off-balance.entity';
 import * as path from 'path';
+import { resetMockHcmServer, setMockHcmBalance } from './mock-hcm-helper';
 
 process.env.DATABASE_PATH = path.resolve(__dirname, '../data/timeoff-e2e.db');
 process.env.NODE_ENV = 'test';
@@ -60,6 +61,13 @@ describe('Time-Off Microservice (e2e)', () => {
       email: 'jane@example.com',
     });
 
+    await employeeRepo.save({
+      id: '1',
+      hcmEmployeeId: 'hcm-mgr-1',
+      name: 'Manager',
+      email: 'manager@example.com',
+    });
+
     await balanceRepo.save({
       id: 'bal-1',
       employeeId: 'emp-1',
@@ -75,6 +83,11 @@ describe('Time-Off Microservice (e2e)', () => {
       balance: 15,
       reserved: 0,
     });
+
+    // Sync mock HCM server balances with local DB seed data
+    await resetMockHcmServer();
+    await setMockHcmBalance('emp-1', 'loc-1', 20);
+    await setMockHcmBalance('emp-2', 'loc-1', 15);
   });
 
   afterAll(async () => {
@@ -102,7 +115,7 @@ describe('Time-Off Microservice (e2e)', () => {
     beforeAll(async () => {
       const submitRes = await request(app.getHttpServer())
         .post('/api/v1/requests')
-        .set('Authorization', 'Bearer emp-1')
+        .set('Authorization', 'Bearer emp-emp-1')
         .send({
           days: 2,
           startDate: '2026-06-01',
@@ -118,23 +131,19 @@ describe('Time-Off Microservice (e2e)', () => {
     it('should get employee balance', async () => {
       const res = await request(app.getHttpServer())
         .get('/api/v1/balance?locationId=loc-1')
-        .set('Authorization', 'Bearer emp-1');
+        .set('Authorization', 'Bearer emp-emp-1');
       
-      expect([200, 400, 500]).toContain(res.status);
-      if (res.status === 200) {
-        expect(res.body).toHaveProperty('balance');
-      }
+      expect(res.status).toBe(200);
+      expect(res.body).toHaveProperty('balance');
     });
 
     it('should get request history', async () => {
       const res = await request(app.getHttpServer())
         .get('/api/v1/requests')
-        .set('Authorization', 'Bearer emp-1');
+        .set('Authorization', 'Bearer emp-emp-1');
       
-      expect([200, 500]).toContain(res.status);
-      if (res.status === 200) {
-        expect(Array.isArray(res.body)).toBe(true);
-      }
+      expect(res.status).toBe(200);
+      expect(Array.isArray(res.body)).toBe(true);
     });
 
     it('should get pending requests for manager', async () => {
@@ -159,7 +168,8 @@ describe('Time-Off Microservice (e2e)', () => {
           comment: 'Approved for testing',
         });
       
-      expect([200, 400, 500]).toContain(res.status);
+      // With mock HCM server running, approval should succeed (HCM deduction works)
+      expect([200, 201, 202]).toContain(res.status);
     });
   });
 
@@ -169,11 +179,10 @@ describe('Time-Off Microservice (e2e)', () => {
         .post('/api/v1/admin/sync/batch')
         .set('Authorization', 'Bearer admin-1');
       
-      expect([201, 500]).toContain(res.status);
-      if (res.status === 201) {
-        expect(res.body).toHaveProperty('syncId');
-        expect(res.body).toHaveProperty('totalRecords');
-      }
+      // With mock HCM server running, batch sync should succeed
+      expect(res.status).toBe(201);
+      expect(res.body).toHaveProperty('syncId');
+      expect(res.body).toHaveProperty('totalRecords');
     });
 
     it('should get recent sync logs', async () => {
@@ -190,7 +199,7 @@ describe('Time-Off Microservice (e2e)', () => {
     it('should reject request with insufficient balance', async () => {
       const res = await request(app.getHttpServer())
         .post('/api/v1/requests')
-        .set('Authorization', 'Bearer emp-1')
+        .set('Authorization', 'Bearer emp-emp-1')
         .send({
           days: 1000,
           startDate: '2026-07-01',
@@ -198,7 +207,7 @@ describe('Time-Off Microservice (e2e)', () => {
           locationId: 'loc-1',
         });
       
-      expect([400, 500]).toContain(res.status);
+      expect(res.status).toBe(400);
     });
 
     it('should reject request without authorization', async () => {
@@ -211,7 +220,7 @@ describe('Time-Off Microservice (e2e)', () => {
     it('should reject invalid date range', async () => {
       const res = await request(app.getHttpServer())
         .post('/api/v1/requests')
-        .set('Authorization', 'Bearer emp-1')
+        .set('Authorization', 'Bearer emp-emp-1')
         .send({
           days: 2,
           startDate: '2026-05-02',
@@ -219,7 +228,7 @@ describe('Time-Off Microservice (e2e)', () => {
           locationId: 'loc-1',
         });
       
-      expect([400, 500]).toContain(res.status);
+      expect(res.status).toBe(400);
     });
   });
 });
