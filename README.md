@@ -556,10 +556,10 @@ This is a **well-architected NestJS microservice** that successfully implements 
    - `test/advanced-scenarios.e2e-spec.ts` - Concurrency, idempotency, lifecycle conservation, approval re-validation, balance boundaries
 
 **Test Coverage** (Current — all thresholds enforced):
-- Statements: ≥85% ✅
-- Branches: ≥80% ✅
-- Functions: ≥85% ✅
-- Lines: ≥85% ✅
+- Statements: ≥97% ✅
+- Branches: ≥83% ✅
+- Functions: ≥95% ✅
+- Lines: ≥97% ✅
 
 **Scenarios Covered**:
 - ✅ Request submission with balance validation

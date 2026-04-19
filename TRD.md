@@ -1066,10 +1066,10 @@ src/
 **Tools**: Jest with Istanbul/NYC
 
 **Current Coverage** (all thresholds enforced by Jest configuration):
-- Statements: ≥85% ✅
-- Branches: ≥80% ✅
-- Functions: ≥85% ✅
-- Lines: ≥85% ✅
+- Statements: ≥97% ✅
+- Branches: ≥83% ✅
+- Functions: ≥95% ✅
+- Lines: ≥97% ✅
 
 **Test Suite Summary**:
 - Unit Tests: 149 tests (11 test suites)
